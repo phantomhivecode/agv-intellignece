@@ -55,10 +55,16 @@ function main(workbook: ExcelScript.Workbook) {
     const shift = dateMatch[4] || "?";
 
     // Reading each sheet's range is unavoidable — we have to look at every tab.
-    // Office Scripts may flag this as a perf warning; it's acceptable here.
-    const usedRange = sheets[i].getUsedRange();
-    if (!usedRange) continue;
-    const values = usedRange.getValues();
+    // Wrap in try-catch so a single bad/empty sheet doesn't stop the whole script.
+    let values: (string | number | boolean)[][] = [];
+    try {
+      const usedRange = sheets[i].getUsedRange();
+      if (!usedRange) continue;
+      values = usedRange.getValues();
+    } catch (e) {
+      console.log(`Skipping sheet "${sheetNames[i]}" — could not read range: ${e}`);
+      continue;
+    }
 
     for (const row of values) {
       if (!row || row.length < 4) continue;
@@ -240,17 +246,7 @@ function main(workbook: ExcelScript.Workbook) {
     r++;
   }
 
-  // --- Chart: daily trend ---
-  if (trendEndRow >= trendStartRow) {
-    const trendRange = sheet.getRangeByIndexes(trendStartRow, 0, trendEndRow - trendStartRow + 1, 2);
-    const chart = sheet.addChart(ExcelScript.ChartType.line, trendRange);
-    chart.getTitle().setText("Daily incident trend");
-    chart.setPosition(sheet.getCell(3, 6), sheet.getCell(20, 14));
-    chart.getLegend().setVisible(false);
-  }
-
-  // --- Chart: top 5 offending units (bar chart) ---
-  // Write a small data block to columns F:G (cols 5:6) starting at row 22 as chart source
+  // --- Chart: Top Three Reported AGVs ---
   const top5StartRow = 22;
   sheet.getRangeByIndexes(top5StartRow, 5, 1, 2).setValues([["Unit", "Incidents"]]);
   const top5Units = signatures.filter(s => s.unit !== "Unknown").slice(0, 3);
@@ -261,7 +257,7 @@ function main(workbook: ExcelScript.Workbook) {
   const top5Range = sheet.getRangeByIndexes(top5StartRow, 5, top5Units.length + 1, 2);
   const top5Chart = sheet.addChart(ExcelScript.ChartType.barClustered, top5Range);
   top5Chart.getTitle().setText("Top Three Reported AGVs");
-  top5Chart.setPosition(sheet.getCell(21, 6), sheet.getCell(35, 14));
+  top5Chart.setPosition(sheet.getCell(3, 6), sheet.getCell(18, 14));
   top5Chart.getLegend().setVisible(false);
 
   // Column widths
