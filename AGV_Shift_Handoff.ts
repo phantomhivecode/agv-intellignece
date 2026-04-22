@@ -139,7 +139,14 @@ function main(workbook: ExcelScript.Workbook) {
     const topFaultEntry = Object.entries(locFaultMap[loc]).sort(([,a],[,b]) => b-a)[0];
     const topFault = topFaultEntry[0];
     const units = Array.from(locUnitMap[loc]).filter(u => u !== "Unknown");
-    if (units.length > 1) {
+
+    // These fault types are always vehicle-specific regardless of how many AGVs appear
+    const vehicleFaults = ["Actuator Fault", "Conveyor Still Transmitting", "Brake/Amplifier Fault", "Encoder", "Guard Rail Bumper Trip", "APlus - Requested Shutdown", "Battery/Low Power"];
+    const isVehicleFault = vehicleFaults.includes(topFault);
+
+    if (isVehicleFault) {
+      talkingPoints.push(`${loc}: ${count} incidents — top fault "${topFault}" is a vehicle issue, not a location issue. Check each AGV individually: ${units.join(", ")}.`);
+    } else if (units.length > 1) {
       talkingPoints.push(`${loc}: ${count} incidents (${units.length} different AGVs — likely a location issue). Top fault: "${topFault}".`);
     } else if (units.length === 1) {
       talkingPoints.push(`${loc}: ${count} incidents (all ${units[0]} — likely vehicle issue, not location).`);
@@ -214,17 +221,6 @@ function main(workbook: ExcelScript.Workbook) {
     out.getRangeByIndexes(r, 0, 1, 6).merge();
     r++;
   }
-  r++;
-
-  // Full incident log
-  writeCell(out, r, 0, "Full Incident Log — This Shift", { bold: true, size: 13 }); r++;
-  writeHeaderRow(out, r, ["Time", "Unit", "Category", "Location", "Description"]); r++;
-  for (const i of incidents) {
-    out.getRangeByIndexes(r, 0, 1, 5).setValues([[
-      i.time, i.unit, i.category, i.location, i.description
-    ]]);
-    r++;
-  }
 
   // Column widths
   out.getRange("A:A").getFormat().setColumnWidth(180);
@@ -261,58 +257,71 @@ function normalizeTime(raw: string | number | boolean): string | null {
 function categorize(desc: string): string {
   const d = desc.toLowerCase().trim();
   if (/^(agv|agf|crane)\s*#?\s*\d+\s*$/.test(d)) return "No Description";
-  if (/conveyor is still transmitting|tec conveyor is still transmitting|tec.*still transmit|conv.*still transmit|conveyor.*still transmit|not sensing conv/.test(d)) return "Conveyor Still Transmitting";
-  if (/right handshake timeout|\brhst\b|\brhsto\b|\brht\b|right handshake|rh timeout/.test(d)) return "Handshake - Right Timeout";
-  if (/left handshake timeout|\blhst\b|\blht\b|left handshake|lh timeout|left hanshake/.test(d)) return "Handshake - Left Timeout";
-  if (/handshake|handhake|hasndshake|hnadshake|handhsake|hansdhake|hanshake/.test(d)) {
+  if (/conveyor is still transmitting|tec conveyor is still transmitting|tec.*still transmit|conv.*still transmit|conveyor.*still transmit|coneyor.*still transmit|not sensing conv|still trnsmitting|still trasmitting/.test(d)) return "Conveyor Still Transmitting";
+  if (/right handshake timeout|\brhst\b|\brhsto\b|\brht\b|right handshake|right hnadshake|right handhake|rh timeout/.test(d)) return "Handshake - Right Timeout";
+  if (/left handshake timeout|\blhst\b|\blht\b|left handshake|left hansdhake|left handshakle|left hasndshake|lh timeout|left hanshake/.test(d)) return "Handshake - Left Timeout";
+  if (/handshake|handhake|hasndshake|hnadshake|handhsake|handshakle|hansdhake|hanshake/.test(d)) {
     if (/\bleft\b/.test(d)) return "Handshake - Left Timeout";
     if (/\bright\b/.test(d)) return "Handshake - Right Timeout";
     return "Handshake - Unspecified";
   }
-  if (/nav.*can.t match reflections|cant match reflections and targets/.test(d)) return "Nav - Can't Match Reflections";
-  if (/nav.*no scanner data|nav - no scanner/.test(d)) return "Nav - No Scanner Data";
-  if (/guid.*traveled too far|traveled too far without correction/.test(d)) return "Guid - Traveled Too Far";
-  if (/nodelock|node lock|lost nav|not on node|node-lock|\bno nav\b|loss of nav/.test(d)) return "Navigation/Nodelock";
-  if (/alignment reflector not detected|alignment reflector|alignment sensor did not turn on/.test(d)) return "Alignment Reflector Not Detected";
+  if (/nav.*can.t match reflections|nav.*cant match reflections|can.t match reflections and targets|cant match reflections and targets/.test(d)) return "Nav - Can't Match Reflections";
+  if (/nav.*no scanner data|nav - no scanner|nav no scanner/.test(d)) return "Nav - No Scanner Data";
+  if (/guid.*travel|traveled too far without correction|travelled too far|travel.*too far|drift fault/.test(d)) return "Guid - Traveled Too Far";
+  if (/nodelock|node lock|lost nav|not on node|node-lock|\bno nav\b|loss of nav|\bnav\b/.test(d)) return "Navigation/Nodelock";
+  if (/alignment reflector not detected|alignment reflector|alignment sensor did not turn on|reflector not detected|alignment rail not in position/.test(d)) return "Alignment Reflector Not Detected";
   if (/no auto-mode guidesafe|no auto mode guidesafe|guidesafe|guidsafe/.test(d)) return "No Auto-Mode Guidesafe";
-  if (/completpicktransfer|completepicktransfer|complet.*pick.*transfer.*t/.test(d)) return "CompletePickTransfer Timeout";
-  if (/competedrop|completedrop.*transfer|complet.*drop.*transfer.*t/.test(d)) return "CompleteDropTransfer Timeout";
-  if (/startpicktransfer|start.*pick.*transfer/.test(d)) return "StartPickTransfer Timeout";
-  if (/midpick transfer|transfer timeout|transfer fault|conveyor timeout/.test(d)) return "Transfer Timeout";
-  if (/unachievable distance|unahievable distance|unacheivable distance|distance cmd/.test(d)) return "Unachievable Distance CMD";
-  if (/aplus requested vehicle shutdown/.test(d)) return "APlus - Requested Shutdown";
-  if (/move without setmove/.test(d)) return "APlus - Move Without SetMove";
-  if (/faulting vehicle during manual load transfer/.test(d)) return "Manual Load Transfer Fault";
+  if (/completpicktransfer|completepicktransfer|complet.*pick.*transfer|pick transfer t\.?o|pick.*transfer.*timeout|completepicktansfer|completepicktanser/.test(d)) return "CompletePickTransfer Timeout";
+  if (/competedrop|completedrop.*transfer|complet.*drop.*transfer|drop transfer t\.?o|complete drop transfer timeout|complete drp transfer/.test(d)) return "CompleteDropTransfer Timeout";
+  if (/startpicktransfer|start.*pick.*transfer|startpick.*t\.?o/.test(d)) return "StartPickTransfer Timeout";
+  if (/conv.*failed to receive transfer|failed to receive transfer from agv/.test(d)) return "Transfer Timeout";
+  if (/midpick transfer|transfer timeout|transfer fault|complete transfer t\.?o|conveyor timeout/.test(d)) return "Transfer Timeout";
+  if (/unachievable distance|unahievable distance|unacheivable distance|unecheivable distance|unaheivable distance|unechievable distance|distance cmd/.test(d)) return "Unachievable Distance CMD";
+  if (/aplus requested vehicle shutdown|aplus.*shutdown|aplus requested|auto shutdown pending.*aplus/.test(d)) return "APlus - Requested Shutdown";
+  if (/aplus.*move without setmove|move without setmove|aplus.*setmove/.test(d)) return "APlus - Move Without SetMove";
+  if (/faulting vehicle during manual load transfer|manual load transfer/.test(d)) return "Manual Load Transfer Fault";
   if (/wamas|failed to receive order/.test(d)) return "WAMAS Order Fault";
-  if (/parameters for positioning at png/.test(d)) return "PNG Positioning Invalid";
-  if (/nonzero demands when pendant/.test(d)) return "Pendant Fault";
-  if (/passedge tripped|pass edge tripped|passedge|overshoot causing pass edge/.test(d)) return "PassEdge Tripped";
+  if (/parameters for positioning at png|positioning at png conveyors/.test(d)) return "PNG Positioning Invalid";
+  if (/inventory does not exist on conveyor|vehicle picking.*inventory/.test(d)) return "Inventory Not On Conveyor";
+  if (/nonzero demands when pendant|pendant activated/.test(d)) return "Pendant Fault";
+  if (/too far from start node|start node of commanded move/.test(d)) return "Start Node Position Fault";
+  if (/passedge tripped|pass edge tripped|conveyor passedge|passedge|pass edge|overshoot causing pass edge/.test(d)) return "PassEdge Tripped";
   if (/momentary power loss|recovered from.*power loss/.test(d)) return "Momentary Power Loss";
   if (/invalid host parameters/.test(d)) return "Invalid Host Parameters";
-  if (/lost host|host connection|nvc.*crash/.test(d)) return "Lost Host Connection";
+  if (/lost host|host connection|nvc.*crash|nvc.*closed with error|lost network connection/.test(d)) return "Lost Host Connection";
   if (/recovery failed|recovery/.test(d)) return "Recovery Failed";
-  if (/no movement range matched|movement range matches/.test(d)) return "No Movement Range Match";
+  if (/no movement range matched|movement range matches|movement range matched|no movement range/.test(d)) return "No Movement Range Match";
   if (/loss of traction feedback/.test(d)) return "Loss of Traction Feedback";
   if (/unexpected traction feedback|traction/.test(d)) return "Unexpected Traction Feedback";
   if (/scanner data|no scanner|scanner could not read/.test(d)) return "Nav - No Scanner Data";
-  if (/low battery|low batt level|battery shutdown|voltage below.*nominal|battery not.*comm.*charger/.test(d)) return "Battery/Low Power";
+  if (/low battery|low batt level|battery shutdown|batt\.?\s*monitor|voltage below.*nominal|battery not.*comm.*charger|battery not.*reporting.*charger|battery.*offline|died on charger/.test(d)) return "Battery/Low Power";
+  if (/flexi|no comms|can message/.test(d)) return "Comms/Flexisoft";
   if (/ads error|tc ads/.test(d)) return "TC ADS Error";
   if (/amplifier fault|em brake|braking distance/.test(d)) return "Brake/Amplifier Fault";
+  if (/drive inverter|lag distance|drift inverter/.test(d)) return "HU Drive Inverter Lag";
   if (/actu?ator/.test(d)) return "Actuator Fault";
-  if (/bu?mper/.test(d)) return "Bumper Trip";
-  if (/reflector|not picking|failed to pick|didn.t line up|not aligned|misaligned/.test(d)) return "Alignment Reflector Not Detected";
-  if (/not dropping|will not drop|dropping stack crooked|unable to complete drop/.test(d)) return "Drop Failure";
-  if (/collided|collision|collide/.test(d)) return "Collision";
+  if (/bu?mper|numper/.test(d)) return "Bumper Trip";
+  if (/conveyor guard blocking|guard blocking stack|can.t load due to.*guard/.test(d)) return "Stack Hitting Guard Rail";
+  if (/bumper.*guard rail|bumper.*guardrail|guard rail.*bumper|guardrail.*bumper|too close to guard|drove too close/.test(d)) return "Guard Rail Bumper Trip";
+  if (/went crooked|crooked.*pick|hit the agv|realigned.*agv|wasn.t lined up|binstack/.test(d)) return "Load/Stack Alignment";
+  if (/reflector|not picking|failed to pick|fail to pick|didn.t line up|did not lin up|did not line up|not aligned|misaligned|not lined up|stack too far off|alignment sensor/.test(d)) return "Alignment Reflector Not Detected";
+  if (/not dropping|will not drop|dropping stack crooked|too far forward dropping|couldn.t finish drop|couldnt finsih drop|unable to complete drop|does not drop|doesn.t drop/.test(d)) return "Drop Failure";
+  if (/collided|collision|collide|pushed.*crooked/.test(d)) return "Collision";
   if (/protection case/.test(d)) return "No Protection Case Match";
-  if (/\bestop\b|e-stop/.test(d)) return "E-Stop";
-  if (/stuck idle|deadlock|wait condition|full infeed|went idle|idle with active/.test(d)) return "Stuck/Blocked";
-  if (/drive inverter|lag distance/.test(d)) return "HU Drive Inverter Lag";
-  if (/load did not release|load defect|getextents|getrack|pantograph|tile not in position/.test(d)) return "AGF Load Fault";
+  if (/\bestop\b|e-stop|e stop/.test(d)) return "E-Stop";
+  if (/stuck idle|deadlock|wait condition|full infeed|stuck in idle|went idle|idle with active|back.?up|causing a back|\bin idle\b|died in|died while|shut down in middle|just turned off|stuck evaluating|waiting for pick|waiting for drop|waiting to drop|waiting to pick/.test(d)) return "Stuck/Blocked";
+  if (/load did not release|load defect fault|load push.pull|load beyond reach|getextents|getrack|pantograph|tile not in position/.test(d)) return "AGF Load Fault";
   if (/\bfrbt\b|\bflbt\b|\brbt\b/.test(d)) return "FRBT/FLBT - Vehicle Blocked";
   if (/roller bridge/.test(d)) return "Roller Bridge";
+  if (/bin stack|load bar|retract loadbar|vehicle not loaded|pallet|sideshift|lateral offset/.test(d)) return "Load Handling";
+  if (/ghost|phantom lu|ulid/.test(d)) return "Phantom/LU Status";
+  if (/inventory/.test(d)) return "Inventory";
+  if (/hold by/.test(d)) return "Hold by CS";
+  if (/safety module|clearance|door to open/.test(d)) return "Safety";
   if (/prelift|flapper/.test(d)) return "Prelift Never Executed";
   if (/encoder/.test(d)) return "Encoder";
   if (/mfs forced error|mlu faulted|lhd movement/.test(d)) return "Crane Fault";
+  if (/jbt testing|being worked on|autefa|coned off|contractors/.test(d)) return "Maintenance/Testing";
   return "Other";
 }
 
