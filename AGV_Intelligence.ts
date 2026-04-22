@@ -549,8 +549,13 @@ function categorize(desc: string): string {
   // Bumper — catches "Bymper" and "Numper" typos
   if (/bu?mper|numper/.test(d)) return "Bumper Trip";
 
-  // Guard Rail — new from Oct/Nov: AGV drove too close to guard rail
-  if (/guard rail|guardrail|too close to guard/.test(d)) return "Guard Rail Proximity";
+  // Stack Hitting Guard Rail — location issue (conveyor guard physically blocking the load)
+  // Triggers on: "can't load due to conveyor guard blocking stack", "guard blocking stack"
+  if (/conveyor guard blocking|guard blocking stack|can.t load due to.*guard/.test(d)) return "Stack Hitting Guard Rail";
+
+  // Guard Rail Bumper Trip — vehicle issue (AGV drove too close to guard rail)
+  // Triggers on: "bumper trip on yellow guardrail", "drove too close to guard rail"
+  if (/bumper.*guard rail|bumper.*guardrail|guard rail.*bumper|guardrail.*bumper|too close to guard|drove too close/.test(d)) return "Guard Rail Bumper Trip";
 
   // Load/Stack physically crooked or misloaded — new from Aug
   if (/went crooked|crooked.*pick|hit the agv|realigned.*agv|wasn.t lined up|binstack|wasn.t lined/.test(d)) return "Load/Stack Alignment";
@@ -571,7 +576,7 @@ function categorize(desc: string): string {
   if (/\bestop\b|e-stop|e stop/.test(d)) return "E-Stop";
 
   // Stuck / Blocked
-  if (/stuck idle|deadlock|wait condition|full infeed|stuck in idle|went idle|idle with active|\bblocking\b|back.?up|causing a back|\bin idle\b|died in|died while|shut down in middle|just turned off|stuck evaluating|waiting for pick|waiting for drop|waiting to drop|waiting to pick/.test(d)) return "Stuck/Blocked";
+  if (/stuck idle|deadlock|wait condition|full infeed|stuck in idle|went idle|idle with active|back.?up|causing a back|\bin idle\b|died in|died while|shut down in middle|just turned off|stuck evaluating|waiting for pick|waiting for drop|waiting to drop|waiting to pick/.test(d)) return "Stuck/Blocked";
 
   // AGF-specific load faults
   if (/load did not release|load defect fault|load push.pull|load beyond reach|getextents|getrack|pantograph|tile not in position/.test(d)) return "AGF Load Fault";
