@@ -207,6 +207,97 @@ function main(workbook: ExcelScript.Workbook) {
   }
   r += 2;
 
+  // --- New Vehicle Performance (AGV 53–58) ---
+  // These vehicles were commissioned January 2026 and are still being kink-worked
+  // by contractors on site. Tracked separately from the main fleet (AGV 1–52).
+  const NEW_FLEET = ["AGV 53", "AGV 54", "AGV 55", "AGV 56", "AGV 57", "AGV 58"];
+  const COMMISSION_DATE = new Date("2026-01-01");
+  const today = new Date();
+  const monthsInService = Math.floor(
+    (today.getTime() - COMMISSION_DATE.getTime()) / (1000 * 60 * 60 * 24 * 30)
+  );
+
+  writeCell(sheet, r, 0, "New Vehicle Performance — AGV 53–58", { bold: true, size: 13 });
+  r++;
+  writeCell(sheet, r, 0, `Commissioned January 2026 · ${monthsInService} months in service · Contractor commissioning in progress`, { italic: true, color: "#666666" });
+  r++;
+  writeHeaderRow(sheet, r, ["Unit", "Incidents (MTD)", "Signature Fault", "%", "Top Location", "Status"]);
+  r++;
+
+  // Build per-vehicle stats for new fleet
+  let newFleetTotal = 0;
+  for (const unit of NEW_FLEET) {
+    const unitIncidents = incidents.filter(i => i.unit === unit);
+    const count = unitIncidents.length;
+    newFleetTotal += count;
+
+    if (count === 0) {
+      // Vehicle has no incidents this month — green light
+      sheet.getRangeByIndexes(r, 0, 1, 6).setValues([[unit, 0, "No incidents", "—", "—", "✓ Clean"]]);
+      sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFill().setColor("#ECFDF5");
+      sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#065F46");
+    } else {
+      // Tally fault categories for this unit
+      const faultTally: Record<string, number> = {};
+      const locTally: Record<string, number> = {};
+      for (const inc of unitIncidents) {
+        faultTally[inc.category] = (faultTally[inc.category] || 0) + 1;
+        if (inc.location) locTally[inc.location] = (locTally[inc.location] || 0) + 1;
+      }
+
+      // Signature fault
+      const sigFault = Object.keys(faultTally)
+        .filter(f => f !== "Other" && f !== "No Description")
+        .sort((a, b) => faultTally[b] - faultTally[a])[0] || "Other";
+      const sigCount = faultTally[sigFault] || 0;
+      const sigPct = Math.round((sigCount / count) * 100);
+
+      // Top location
+      const topLoc = Object.keys(locTally)
+        .sort((a, b) => locTally[b] - locTally[a])[0] || "—";
+
+      // Status — based on incident count and concentration
+      let status = "";
+      if (count >= 20 && sigPct >= 50) {
+        status = "⚠ Contractor Action";
+      } else if (count >= 10) {
+        status = "↑ Monitor Closely";
+      } else {
+        status = "~ In Progress";
+      }
+
+      sheet.getRangeByIndexes(r, 0, 1, 6).setValues([[
+        unit, count, sigFault, sigPct + "%", topLoc, status
+      ]]);
+
+      // Color code by status
+      if (status.startsWith("⚠")) {
+        // Amber — needs contractor attention
+        sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#FEF3C7");
+        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setBold(true);
+        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#92400E");
+      } else if (status.startsWith("↑")) {
+        // Light coral — monitor
+        sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#FAECE7");
+        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#7C2D12");
+      } else {
+        // Light blue — commissioning in progress, normal
+        sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#EFF6FF");
+        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#1E3A5F");
+      }
+    }
+    r++;
+  }
+
+  // New fleet summary row
+  const newFleetPct = totalIncidents > 0 ? Math.round((newFleetTotal / totalIncidents) * 100) : 0;
+  sheet.getRangeByIndexes(r, 0, 1, 6).setValues([[
+    "New Fleet Total", newFleetTotal, `${newFleetPct}% of all facility incidents`, "", "", ""
+  ]]);
+  sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFont().setBold(true);
+  sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#DBEAFE");
+  r += 2;
+
   // --- Failure categories ---
   writeCell(sheet, r, 0, "Failure categories", { bold: true, size: 13 });
   r++;
