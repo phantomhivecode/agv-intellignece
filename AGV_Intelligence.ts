@@ -208,8 +208,7 @@ function main(workbook: ExcelScript.Workbook) {
   r += 2;
 
   // --- New Vehicle Performance (AGV 53–58) ---
-  // These vehicles were commissioned January 2026 and are still being kink-worked
-  // by contractors on site. Tracked separately from the main fleet (AGV 1–52).
+  // Commissioned January 2026 — tracked separately from main fleet (AGV 1–52)
   const NEW_FLEET = ["AGV 53", "AGV 54", "AGV 55", "AGV 56", "AGV 57", "AGV 58"];
   const COMMISSION_DATE = new Date("2026-01-01");
   const today = new Date();
@@ -219,12 +218,11 @@ function main(workbook: ExcelScript.Workbook) {
 
   writeCell(sheet, r, 0, "New Vehicle Performance — AGV 53–58", { bold: true, size: 13 });
   r++;
-  writeCell(sheet, r, 0, `Commissioned January 2026 · ${monthsInService} months in service · Contractor commissioning in progress`, { italic: true, color: "#666666" });
+  writeCell(sheet, r, 0, `Commissioned January 2026 · ${monthsInService} months in service`, { italic: true, color: "#666666" });
   r++;
-  writeHeaderRow(sheet, r, ["Unit", "Incidents (MTD)", "Signature Fault", "%", "Top Location", "Status"]);
+  writeHeaderRow(sheet, r, ["Unit", "Incidents (MTD)", "Signature Fault", "%", "Top Location"]);
   r++;
 
-  // Build per-vehicle stats for new fleet
   let newFleetTotal = 0;
   for (const unit of NEW_FLEET) {
     const unitIncidents = incidents.filter(i => i.unit === unit);
@@ -232,70 +230,39 @@ function main(workbook: ExcelScript.Workbook) {
     newFleetTotal += count;
 
     if (count === 0) {
-      // Vehicle has no incidents this month — green light
-      sheet.getRangeByIndexes(r, 0, 1, 6).setValues([[unit, 0, "No incidents", "—", "—", "✓ Clean"]]);
-      sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFill().setColor("#ECFDF5");
-      sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#065F46");
+      sheet.getRangeByIndexes(r, 0, 1, 5).setValues([[unit, 0, "No incidents", "—", "—"]]);
+      sheet.getRangeByIndexes(r, 0, 1, 5).getFormat().getFill().setColor("#EFF6FF");
     } else {
-      // Tally fault categories for this unit
       const faultTally: Record<string, number> = {};
       const locTally: Record<string, number> = {};
       for (const inc of unitIncidents) {
         faultTally[inc.category] = (faultTally[inc.category] || 0) + 1;
         if (inc.location) locTally[inc.location] = (locTally[inc.location] || 0) + 1;
       }
-
-      // Signature fault
       const sigFault = Object.keys(faultTally)
         .filter(f => f !== "Other" && f !== "No Description")
         .sort((a, b) => faultTally[b] - faultTally[a])[0] || "Other";
-      const sigCount = faultTally[sigFault] || 0;
-      const sigPct = Math.round((sigCount / count) * 100);
+      const sigPct = Math.round(((faultTally[sigFault] || 0) / count) * 100);
+      const topLoc = Object.keys(locTally).sort((a, b) => locTally[b] - locTally[a])[0] || "—";
 
-      // Top location
-      const topLoc = Object.keys(locTally)
-        .sort((a, b) => locTally[b] - locTally[a])[0] || "—";
+      sheet.getRangeByIndexes(r, 0, 1, 5).setValues([[unit, count, sigFault, sigPct + "%", topLoc]]);
+      sheet.getRangeByIndexes(r, 0, 1, 5).getFormat().getFill().setColor("#EFF6FF");
 
-      // Status — based on incident count and concentration
-      let status = "";
-      if (count >= 20 && sigPct >= 50) {
-        status = "⚠ Contractor Action";
-      } else if (count >= 10) {
-        status = "↑ Monitor Closely";
-      } else {
-        status = "~ In Progress";
-      }
-
-      sheet.getRangeByIndexes(r, 0, 1, 6).setValues([[
-        unit, count, sigFault, sigPct + "%", topLoc, status
-      ]]);
-
-      // Color code by status
-      if (status.startsWith("⚠")) {
-        // Amber — needs contractor attention
-        sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#FEF3C7");
-        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setBold(true);
-        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#92400E");
-      } else if (status.startsWith("↑")) {
-        // Light coral — monitor
-        sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#FAECE7");
-        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#7C2D12");
-      } else {
-        // Light blue — commissioning in progress, normal
-        sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#EFF6FF");
-        sheet.getRangeByIndexes(r, 5, 1, 1).getFormat().getFont().setColor("#1E3A5F");
+      // Amber highlight if 40%+ same fault with 10+ incidents — draws attention without labeling it
+      if (sigPct >= 40 && count >= 10) {
+        sheet.getRangeByIndexes(r, 2, 1, 2).getFormat().getFill().setColor("#FEF3C7");
       }
     }
     r++;
   }
 
-  // New fleet summary row
+  // Summary row
   const newFleetPct = totalIncidents > 0 ? Math.round((newFleetTotal / totalIncidents) * 100) : 0;
-  sheet.getRangeByIndexes(r, 0, 1, 6).setValues([[
-    "New Fleet Total", newFleetTotal, `${newFleetPct}% of all facility incidents`, "", "", ""
+  sheet.getRangeByIndexes(r, 0, 1, 5).setValues([[
+    "New Fleet Total", newFleetTotal, `${newFleetPct}% of all facility incidents`, "", ""
   ]]);
-  sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFont().setBold(true);
-  sheet.getRangeByIndexes(r, 0, 1, 6).getFormat().getFill().setColor("#DBEAFE");
+  sheet.getRangeByIndexes(r, 0, 1, 5).getFormat().getFont().setBold(true);
+  sheet.getRangeByIndexes(r, 0, 1, 5).getFormat().getFill().setColor("#DBEAFE");
   r += 2;
 
   // --- Failure categories ---
@@ -529,6 +496,83 @@ function categorize(desc: string): string {
 
   // Bare unit name only — no actionable fault text
   if (/^(agv|agf|crane)\s*#?\s*\d+\s*$/.test(d)) return "No Description";
+
+  // ── AGF (LBW) ALARM TEXTS — must come before generic rules ───────────────
+  // AGF 501-503 are dedicated to LBW and have a completely different fault vocabulary
+  // from HBW AGVs. These rules anchor to the exact alarm texts from the AGF system.
+
+  // Normal operations — completion/status events, not faults
+  if (/^op complete$|^prelift completed$|autocharge attempt started|chargerstopinposition|autocharge operation complete without manual|getrack feedback validated after straylight|camera data being logged.*getrack|vehicle initialization started|stretchwrapdetection successfully cleared|driver detect/.test(d)) return "AGF Normal Op";
+
+  // Prelift faults
+  if (/prelift never executed|prelift did not complete.*unknown|prelift paused because vehicle is outside|prelift cancelled because vehicle is outside/.test(d)) return "AGF Prelift Fault";
+
+  // Lift faults
+  if (/lift not in position.*retry|lift pos retry due to lift pressure|lift height check failed/.test(d)) return "AGF Lift Fault";
+
+  // Sideshift
+  if (/sideshift limit reached to find center of rack/.test(d)) return "AGF Sideshift Limit";
+  if (/retracting pallet.*pick between.*sideshift|retracting pallet.*pick beyond sideshift/.test(d)) return "AGF Sideshift Retract";
+
+  // Pallet offset — critical (causes switch to manual)
+  if (/pallet lateral offset exceeds sideshift tolerance|palletlatoffset.*outside of area.*switch to manual/.test(d)) return "AGF Pallet Offset - Critical";
+
+  // Pallet offset — drop side
+  if (/unable to achieve pallet lateral position on rack drop|pallet is \d+mm.*\d+mm offset from center of drop location|pallet is >75mm offset from center of drop/.test(d)) return "AGF Pallet Offset - Drop";
+
+  // Pallet offset — pick side (forks)
+  if (/pallet is \d+mm.*\d+mm offset from center of forks/.test(d)) return "AGF Pallet Offset - Pick";
+
+  // Load faults
+  if (/load did not release.*switch to manual|load did not release from flapper/.test(d)) return "AGF Load Did Not Release";
+  if (/load push.*pull detected/.test(d)) return "AGF Load Push/Pull";
+
+  // Camera / vision system
+  if (/camera locateextents rack data exists with no upright|camera could not associate rack.*upright coverage|camera processing|camera is saving data for pick location blocked/.test(d)) return "AGF Camera Fault";
+
+  // Pantograph
+  if (/pantograph current overload detected|pantograph push detected/.test(d)) return "AGF Pantograph Overload";
+
+  // Inventory / access blocked
+  if (/inventory.*load beyond reach.*switch to manual|inventory.*access to rear pick blocked|getextents.*inventory.*front drop location occupied|can.t resume.*you need to clear all error/.test(d)) return "AGF Inventory Blocked";
+
+  // AGF Bumper trips (different naming from HBW bumpers)
+  if (/^front bumper$|^rear right bumper$|^rear left bumper$|^rear bumper$/.test(d)) return "AGF Bumper Trip";
+
+  // Actuator faults (AGF-specific naming with Over/Under Position)
+  if (/actuator #\d+ (over|under) position/.test(d)) return "AGF Actuator Fault";
+
+  // Flapper
+  if (/flapper tripped prematurely/.test(d)) return "AGF Flapper Trip";
+
+  // EDM faults
+  if (/instant off edm fault|delayed off edm fault/.test(d)) return "AGF EDM Fault";
+
+  // Manual mode / interruption
+  if (/agv operation interrupted by manual mode|auto.*manual state mismatch/.test(d)) return "AGF Manual Mode";
+
+  // Drive overload
+  if (/drive overload detected.*switch to manual/.test(d)) return "AGF Drive Overload";
+
+  // Path deviation
+  if (/slowing vehicle.*attempting to return vehicle to path|vehicle is \d+mm.*\d+mm offset from guidepath|unexpected vehicle direction/.test(d)) return "AGF Path Deviation";
+
+  // Vehicle timeout
+  if (/vehicle timed out.*operation cannot be completed/.test(d)) return "AGF Vehicle Timeout";
+
+  // Charger faults
+  if (/charger current below expectation|no current detected while charging.*switch to manual|no current detected.*positive charge not detected/.test(d)) return "AGF Charger Fault";
+  if (/emergency-stop button pressed/.test(d)) return "E-Stop";
+  if (/voltage below 75% of nominal/.test(d)) return "Battery/Low Power";
+  if (/aplus move distance exceeds route move length/.test(d)) return "APlus - Move Without SetMove";
+
+  // ── Engineer paraphrase variants found in May shift reports ──────────────
+  // Engineers paraphrase AGF alarms rather than copying exact system text
+  if (/prelift lateral offset exceeds sideshift|lateral offset exceeds sideshift/.test(d)) return "AGF Pallet Offset - Critical";
+  if (/getextents.*inventory.*fron.*drop.*occupied|getextents.*inventory.*front.*drop.*occupied/.test(d)) return "AGF Inventory Blocked";
+  if (/lift over position|lift under position|tilt not in position/.test(d)) return "AGF Lift Fault";
+  if (/sat idle.*charger.*active order|wait condition.*charger.*order|in wait condition.*charger/.test(d)) return "Stuck/Blocked";
+  if (/battery not reporting.*comm.*charger|battery not reporting.*charger/.test(d)) return "Battery/Low Power";
 
   // ── OFFICIAL ALARM TEXTS — anchored to exact system phrases ──────────────
 
